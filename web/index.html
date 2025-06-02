@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="sourcemap" content="none">
+    <title>PPMS项目管理系统</title>
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/bootstrap.min.css">
+    <link rel="stylesheet" href="css/bootstrap-icons.css">
+    <style>
+        /* 预加载关键图标字体以避免延迟 */
+        @font-face {
+            font-family: 'bootstrap-icons';
+            src: url('fonts/bootstrap-icons.woff2') format('woff2');
+            font-weight: normal;
+            font-style: normal;
+            font-display: block;
+        }
+        
+        /* 立即显示常用图标的关键字符 */
+        .bi-list:before,
+        .bi-list-check:before,
+        .bi-bar-chart:before,
+        .bi-shield-lock:before,
+        .bi-folder:before,
+        .bi-cash-coin:before,
+        .bi-gear:before,
+        .bi-plus-lg:before,
+        .bi-calendar:before,
+        .bi-check-circle-fill:before,
+        .bi-circle:before,
+        .bi-journal-text:before,
+        .bi-pencil:before,
+        .bi-trash:before {
+            font-family: 'bootstrap-icons' !important;
+            display: inline-block;
+        }
+    </style>
+    <!-- 移除内联脚本中的主题保存功能 -->
+    <script>
+        // 不再从localStorage获取主题设置
+        // 每次启动都使用默认主题
+    </script>
+</head>
+<body>
+<script>
+// 轮询等待pywebview注入后再获取设置并应用主题
+function applyThemeFromSettings() {
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.get_settings) {
+    window.pywebview.api.get_settings().then(function(settings) {
+      if (settings && settings.theme) {
+        document.documentElement.setAttribute('data-theme', settings.theme);
+        document.body.className = settings.theme;
+        window.dispatchEvent(new Event('themeChanged'));
+      }
+    });
+  } else {
+    setTimeout(applyThemeFromSettings, 100); // 100ms后重试
+  }
+}
+applyThemeFromSettings();
+</script>
+    <div class="app-container">
+        <!-- 侧边栏导航 -->
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h3>ISimon<i class="bi bi-8-square"></i>.PPMS</h3>
+            </div>
+            <ul class="sidebar-menu">
+                <li class="nav-item active" data-page="tasks">
+                    <a href="#"><i class="bi bi-list-check"></i> 任务管理</a>
+                </li>
+                <li class="nav-item" data-page="accounts">
+                    <a href="#"><i class="bi bi-shield-lock"></i> 账号管理</a>
+                </li>
+                <li class="nav-item" data-page="projects">
+                    <a href="#"><i class="bi bi-folder"></i> 完成项目</a>
+                </li>
+                <li class="nav-item" data-page="payments">
+                    <a href="#"><i class="bi bi-cash-coin"></i> 结算清单</a>
+                </li>
+                <li class="nav-item" data-page="reports">
+                    <a href="#"><i class="bi bi-bar-chart"></i> 任务报告</a>
+                </li>
+                <li class="nav-item" data-page="settings">
+                    <a href="#"><i class="bi bi-gear"></i> 系统设置</a>
+                </li>
+            </ul>
+        </nav>
+
+        <!-- 主内容区 -->
+        <main class="content">
+            <header class="content-header">
+                <button class="sidebar-toggle" id="sidebar-toggle">
+                    <i class="bi bi-list"></i>
+                </button>
+                <h2 id="page-title">任务管理</h2>
+                <div class="user-info">
+                    <div class="theme-toggle-switch" id="theme-switch">
+                        <div class="toggle-thumb">
+                            <span class="theme-icon">☀️</span>
+                        </div>
+                    </div>
+                    <span id="current-date"></span>
+                    <i class="bi bi-sun-fill" id="theme-icon" style="display:none;"></i>
+                </div>
+            </header>
+
+            <!-- 任务管理页面 -->
+            <div class="page-content active" id="tasks-page">
+                <div class="action-bar">
+                    <div class="action-left">
+                        <button class="btn btn-primary" id="add-task-btn">
+                            <i class="bi bi-plus-lg"></i> 添加任务
+                        </button>
+                        <span class="badge bg-primary ms-2" id="task-status-badge">0</span>
+                    </div>
+                    <div class="filter-group">
+                        <select id="task-status-filter" class="form-select">
+                            <option value="all">全部状态</option>
+                            <option value="pending">待办</option>
+                            <option value="in-progress">进行中</option>
+                        </select>
+                        <select id="task-priority-filter" class="form-select">
+                            <option value="all">全部等级</option>
+                            <option value="high">高优先级</option>
+                            <option value="medium">中优先级</option>
+                            <option value="low">低优先级</option>
+                        </select>
+                        <button class="btn btn-outline-secondary filter-btn" id="manage-clients-btn" title="管理客户列表">
+                            <i class="bi bi-people"></i><span>客户</span>
+                        </button>
+                        <button class="btn btn-outline-secondary filter-btn" id="manage-categories-btn" title="管理项目类型">
+                            <i class="bi bi-tags"></i><span>类型</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="tasks-container">
+                    <div class="tasks-list" id="tasks-list">
+                        <!-- 任务列表将通过JavaScript动态生成 -->
+                    </div>
+                </div>
+
+                <!-- 添加任务模态框 -->
+                <div class="modal fade" id="task-modal" tabindex="-1" aria-labelledby="task-modal-title" aria-modal="true" role="dialog">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="task-modal-title">添加任务</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="task-form">
+                                    <input type="hidden" id="task-id">
+                                    <div class="mb-3">
+                                        <label for="task-title" class="form-label">任务标题</label>
+                                        <input type="text" class="form-control" id="task-title" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="task-client" class="form-label">客户名称</label>
+                                        <div class="input-group">
+                                            <input type="text" class="form-control" id="task-client" list="client-options" placeholder="">
+                                            <datalist id="client-options">
+                                                <!-- 客户选项将通过JavaScript动态生成 -->
+                                            </datalist>
+                                        </div>
+                                        <small class="form-text text-muted">从客户列表中选择，或输入新客户名称</small>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="task-category" class="form-label">任务类别</label>
+                                        <div class="input-group">
+                                            <input type="text" class="form-control" id="task-category" list="category-options" placeholder="">
+                                            <datalist id="category-options">
+                                                <!-- 类别选项将通过JavaScript动态生成 -->
+                                            </datalist>
+                                        </div>
+                                        <small class="form-text text-muted">从项目类型列表中选择，或输入新类别</small>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-4 mb-3">
+                                            <label for="task-deadline" class="form-label">截止日期</label>
+                                            <input type="date" class="form-control" id="task-deadline">
+                                        </div>
+                                        <div class="col-md-4 mb-3">
+                                            <label for="task-priority" class="form-label">优先级</label>
+                                            <select class="form-select" id="task-priority">
+                                                <option value="high">高</option>
+                                                <option value="medium" selected>中</option>
+                                                <option value="low">低</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4 mb-3">
+                                            <label for="task-quantity" class="form-label">数量</label>
+                                            <input type="number" class="form-control" id="task-quantity" min="1" value="1">
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="task-notes" class="form-label">备注</label>
+                                        <textarea class="form-control" id="task-notes" rows="2"></textarea>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                                <button type="button" class="btn btn-primary" id="save-task-btn">保存</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 任务进度模态框 -->
+                <div class="modal fade" id="progress-modal" tabindex="-1" aria-labelledby="progress-modal-title" aria-modal="true" role="dialog">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="progress-modal-title">任务进度</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="progress-list" id="progress-list">
+                                    <!-- 进度记录将通过JavaScript动态生成 -->
+                                </div>
+                                <form id="progress-form" class="mt-3">
+                                    <input type="hidden" id="progress-task-id">
+                                    <div class="mb-3">
+                                        <label for="progress-text" class="form-label">进度记录</label>
+                                        <textarea class="form-control" id="progress-text" rows="2" required></textarea>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                                <button type="button" class="btn btn-primary" id="save-progress-btn">添加记录</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 客户列表管理模态框 -->
+                <div class="modal fade" id="clients-modal" tabindex="-1" aria-labelledby="clients-modal-title" aria-modal="true" role="dialog">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="clients-modal-title">客户列表管理</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="row mb-3">
+                                    <div class="col-md-9 mb-2">
+                                        <input type="text" class="form-control" id="new-client-name" placeholder="输入新客户名称">
+                                    </div>
+                                    <div class="col-md-3 mb-2">
+                                        <button class="btn btn-primary w-100" id="add-client-btn">
+                                            <i class="bi bi-plus-lg"></i> 添加
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>客户名称</th>
+                                                <th class="text-end">操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="clients-list-table">
+                                            <!-- 客户列表将通过JavaScript动态生成 -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 项目类型管理模态框 -->
+                <div class="modal fade" id="categories-modal" tabindex="-1" aria-labelledby="categories-modal-title" aria-modal="true" role="dialog">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="categories-modal-title">项目类型管理</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="row mb-3">
+                                    <div class="col-md-9 mb-2">
+                                        <input type="text" class="form-control" id="new-category-name" placeholder="输入新项目类型">
+                                    </div>
+                                    <div class="col-md-3 mb-2">
+                                        <button class="btn btn-primary w-100" id="add-category-btn">
+                                            <i class="bi bi-plus-lg"></i> 添加
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>项目类型</th>
+                                                <th class="text-end">操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="categories-list-table">
+                                            <!-- 项目类型列表将通过JavaScript动态生成 -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 任务报告页面 -->
+            <div class="page-content" id="reports-page">
+                <div class="report-controls mb-4">
+                    <div class="period-selector">
+                        <button class="btn btn-outline-primary active" data-period="week">周报告</button>
+                        <button class="btn btn-outline-primary" data-period="month">月报告</button>
+                        <button class="btn btn-outline-primary" data-period="year">年报告</button>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-12">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">任务完成统计</h5>
+                                <div class="stats-container">
+                                    <div class="stat-item">
+                                        <span class="stat-value" id="completed-tasks">0</span>
+                                        <span class="stat-label">已完成</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-value" id="settled-tasks">0</span>
+                                        <span class="stat-label">已结算</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-value" id="settlement-rate">0%</span>
+                                        <span class="stat-label">结算率</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-value" id="active-days">0</span>
+                                        <span class="stat-label">活跃天数</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mt-4">
+                    <div class="col-md-6">
+                        <div class="card" style="height: 350px;">
+                            <div class="card-body">
+                                <h5 class="card-title">任务状态分布</h5>
+                                <div class="chart-container" style="position: relative; height: 250px; width: 100%; max-width: 100%;">
+                                    <canvas id="tasks-status-chart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card" style="height: 350px;">
+                            <div class="card-body">
+                                <h5 class="card-title">项目类型分布</h5>
+                                <div class="chart-container" style="position: relative; height: 250px; width: 100%; max-width: 100%;">
+                                    <canvas id="tasks-type-chart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <div class="card" style="height: 350px;">
+                            <div class="card-body">
+                                <h5 class="card-title">项目完成趋势</h5>
+                                <div class="chart-container" style="position: relative; height: 250px; width: 100%; max-width: 100%;">
+                                    <canvas id="tasks-trend-chart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 账号管理页面 -->
+            <div class="page-content" id="accounts-page">
+                <div class="action-bar">
+                    <button class="btn btn-primary" id="add-account-btn">
+                        <i class="bi bi-plus-lg"></i> 添加账号
+                    </button>
+                    <div class="filter-group">
+                        <div class="search-container">
+                            <input type="text" class="form-control" id="account-search" placeholder="搜索客户名称..." aria-label="搜索客户名称">
+                            <button type="button" class="btn-clear" id="clear-account-search" title="清除搜索">
+                                <i class="bi bi-x"></i>
+                            </button>
+                        </div>
+                        <select id="account-tag-filter" class="form-select">
+                            <option value="all">项目类型</option>
+                            <!-- 项目类型选项将通过JavaScript动态生成 -->
+                        </select>
+                    </div>
+                </div>
+
+                <div class="accounts-container">
+                    <div class="accounts-list" id="accounts-list">
+                        <!-- 账号列表将通过JavaScript动态生成 -->
+                    </div>
+                </div>
+
+                <!-- 添加账号模态框 -->
+                <div class="modal fade" id="account-modal" tabindex="-1" aria-labelledby="account-modal-title" aria-modal="true" role="dialog">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="account-modal-title">添加账号</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="account-form">
+                                    <input type="hidden" id="account-id">
+                                    <div class="mb-3">
+                                        <label for="website-type" class="form-label">网站类型 <span class="text-danger">*</span></label>
+                                        <div class="input-group">
+                                            <input type="text" class="form-control" id="website-type" list="website-options" required>
+                                            <datalist id="website-options"></datalist>
+                                            <button class="btn btn-outline-secondary" type="button" id="manage-websites-btn" title="管理网站类型">
+                                                <i class="bi bi-gear"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="account-username" class="form-label">用户名</label>
+                                        <input type="text" class="form-control" id="account-username" list="client-options-account">
+                                        <datalist id="client-options-account">
+                                            <!-- 客户选项将通过JavaScript动态生成 -->
+                                        </datalist>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="account-account" class="form-label">账号</label>
+                                        <input type="text" class="form-control" id="account-account">
+                                    </div>
+                                    <div class="mb-3 d-none" id="row-field-container">
+                                        <label for="account-row" class="form-label">扩展行</label>
+                                        <input type="text" class="form-control" id="account-row">
+                                    </div>
+                                    <div class="mb-3">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="add-row-btn">
+                                            <i class="bi bi-plus-lg"></i> 扩展行
+                                        </button>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="account-password" class="form-label">密码</label>
+                                        <div class="input-group">
+                                            <input type="password" class="form-control" id="account-password">
+                                            <button class="btn btn-outline-secondary toggle-password" type="button" aria-label="显示/隐藏密码">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="account-tag" class="form-label">项目类型</label>
+                                        <input type="text" class="form-control" id="account-tag" list="category-options-account" placeholder="">
+                                        <datalist id="category-options-account">
+                                            <!-- 项目类型选项将通过JavaScript动态生成 -->
+                                        </datalist>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="account-notes" class="form-label">备注</label>
+                                        <textarea class="form-control" id="account-notes" rows="2"></textarea>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                                <button type="button" class="btn btn-primary" id="save-account-btn">保存</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 完成项目页面 -->
+            <div class="page-content" id="projects-page">
+                <div class="action-bar">
+                    <button class="btn btn-primary" id="add-project-btn">
+                        <i class="bi bi-plus-lg"></i> 添加项目
+                    </button>
+                    <div class="filter-group">
+                        <div class="search-container">
+                            <input type="text" class="form-control" id="project-search" placeholder="搜索客户名称..." aria-label="搜索客户名称">
+                            <button type="button" class="btn-clear" id="clear-project-search" title="清除搜索">
+                                <i class="bi bi-x"></i>
+                            </button>
+                        </div>
+                        <select id="project-type-filter" class="form-select">
+                            <option value="all">全部类型</option>
+                            <!-- 项目类型选项将通过JavaScript动态生成 -->
+                        </select>
+                        <select id="project-year-filter" class="form-select">
+                            <option value="all">全部年份</option>
+                            <!-- 年份选项将通过JavaScript动态生成 -->
+                        </select>
+                        <button class="btn btn-outline-secondary" id="toggle-archived">
+                            <i class="bi bi-archive"></i> 显示归档
+                        </button>
+                    </div>
+                </div>
+
+                <div class="projects-container">
+                    <div class="projects-list" id="projects-list">
+                        <!-- 项目列表将通过JavaScript动态生成 -->
+                    </div>
+                </div>
+
+                <!-- 添加项目模态框 -->
+                <div class="modal fade" id="project-modal" tabindex="-1" aria-labelledby="project-modal-title" aria-modal="true" role="dialog">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="project-modal-title">添加项目</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="project-form">
+                                    <input type="hidden" id="project-id">
+                                    <div class="mb-3">
+                                        <label for="project-name" class="form-label">项目名称</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text" id="project-client-prefix">[客户]</span>
+                                            <input type="text" class="form-control" id="project-name" required>
+                                        </div>
+                                        <small class="form-text text-muted">如需添加客户名称，请使用格式: [客户名称] 项目名称</small>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="project-type" class="form-label">项目类型</label>
+                                        <input type="text" class="form-control" id="project-type" list="project-type-options">
+                                        <datalist id="project-type-options">
+                                            <!-- 项目类型选项将通过JavaScript动态生成 -->
+                                        </datalist>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="project-quantity" class="form-label">数量</label>
+                                        <input type="number" class="form-control" id="project-quantity" min="1">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="completion-date" class="form-label">完成日期</label>
+                                        <input type="date" class="form-control" id="completion-date">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="payment-status" class="form-label">结算状态</label>
+                                        <select class="form-select" id="payment-status">
+                                            <option value="unpaid">未结算</option>
+                                            <option value="paid">已结算</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="project-notes" class="form-label">备注</label>
+                                        <textarea class="form-control" id="project-notes" rows="2"></textarea>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                                <button type="button" class="btn btn-primary" id="save-project-btn">保存</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 结算项目模态框 -->
+                <div class="modal fade" id="settle-project-modal" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">结算项目</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="settlement-form">
+                                    <input type="hidden" id="settle-project-id">
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label">项目信息</label>
+                                        <div class="card">
+                                            <div class="card-body">
+                                                <div class="mb-2">
+                                                    <span class="fw-bold">客户名称：</span>
+                                                    <span id="project-client"></span>
+                                                </div>
+                                                <div class="mb-2">
+                                                    <span class="fw-bold">项目名称：</span>
+                                                    <span id="project-name-display"></span>
+                                                </div>
+                                                <div class="mb-2">
+                                                    <span class="fw-bold">项目类型：</span>
+                                                    <span id="project-type-display"></span>
+                                                </div>
+                                                <div class="mb-2">
+                                                    <span class="fw-bold">数量：</span>
+                                                    <span id="project-quantity-display"></span>
+                                                </div>
+                                                <div class="mb-2">
+                                                    <span class="fw-bold">完成日期：</span>
+                                                    <span id="project-completion-date"></span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label for="settlement-amount" class="form-label">结算金额</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text">¥</span>
+                                            <input type="number" class="form-control" id="settlement-amount" required>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label for="settlement-date" class="form-label">结算日期</label>
+                                        <input type="date" class="form-control" id="settlement-date" required>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label for="settlement-notes" class="form-label">备注</label>
+                                        <textarea class="form-control" id="settlement-notes" rows="3" placeholder="请输入结算备注信息（选填）"></textarea>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                                <button type="button" class="btn btn-success" id="confirm-settlement-btn">确认结算</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 结算清单页面 -->
+            <div class="page-content" id="payments-page">
+                <div class="action-bar">
+                    <button class="btn btn-primary" id="add-payment-btn">
+                        <i class="bi bi-plus-lg"></i> 添加结算
+                    </button>
+                    <div class="filter-group">
+                        <div class="form-group mb-3">
+                            <select class="form-select" id="payment-period-filter">
+                                <option value="all">所有时间</option>
+                                <!-- 年份选项将由JS动态生成 -->
+                            </select>
+                        </div>
+                        <div class="form-group mb-3">
+                            <div class="search-container">
+                                <input type="text" class="form-control" id="payment-search" placeholder="搜索客户名称..." aria-label="搜索客户名称">
+                                <button type="button" class="btn-clear" id="clear-payment-search" title="清除搜索">
+                                    <i class="bi bi-x"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="payments-container">
+                            <div class="payments-list" id="payments-list">
+                                <!-- 结算列表将通过JavaScript动态生成 -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">收入统计</h5>
+                                <div class="payment-stats">
+                                    <div class="stat-item">
+                                        <span class="stat-value" id="total-amount">¥0</span>
+                                        <span class="stat-label">总收入</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-value" id="payment-count">0</span>
+                                        <span class="stat-label">结算笔数</span>
+                                    </div>
+                                </div>
+                                <div class="mt-4">
+                                    <canvas id="payments-chart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 添加结算模态框 -->
+                <div class="modal fade" id="payment-modal" tabindex="-1" aria-labelledby="payment-modal-title" aria-modal="true" role="dialog">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="payment-modal-title">添加结算</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="payment-form">
+                                    <input type="hidden" id="payment-id">
+                                    <div class="mb-3">
+                                        <label for="payment-project" class="form-label">关联项目</label>
+                                        <select class="form-select" id="payment-project" required>
+                                            <option value="">选择项目</option>
+                                            <!-- 项目选项将通过JavaScript动态生成 -->
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="payment-amount" class="form-label">金额</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text">¥</span>
+                                            <input type="number" class="form-control" id="payment-amount" min="0" step="0.01" required>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="payment-date" class="form-label">日期</label>
+                                        <input type="date" class="form-control" id="payment-date">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="payment-notes" class="form-label">备注</label>
+                                        <textarea class="form-control" id="payment-notes" rows="2"></textarea>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                                <button type="button" class="btn btn-primary" id="save-payment-btn">保存</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 系统设置页面 -->
+            <div class="page-content" id="settings-page">
+                <div class="card mt-4">
+                    <div class="card-body">
+                        <h5 class="card-title">通用设置</h5>
+                        <div class="settings-group">
+                            <div class="setting-item">
+                                <span>开机自启</span>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="autostart-switch">
+                                </div>
+                            </div>
+                            <div class="setting-item">
+                                <span>最小化到托盘</span>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="minimize-to-tray-switch">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card mt-4">
+                    <div class="card-body">
+                        <h5 class="card-title">数据导出</h5>
+                        <div class="export-options">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">数据类型</label>
+                                    <select class="form-select" id="export-type">
+                                        <option value="accounts">账号数据</option>
+                                        <option value="projects">项目数据</option>
+                                        <option value="payments">结算数据</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">格式</label>
+                                    <select class="form-select" id="export-format">
+                                        <option value="excel">Excel</option>
+                                        <option value="csv">CSV</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-primary" id="export-btn">导出数据</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 脚本引用 -->
+    <script src="js/bootstrap.bundle.min.js"></script>
+    <script src="js/chart.umd.min.js"></script>
+    <script src="js/app.js"></script>
+    
+    <!-- 通用提示对话框 -->
+    <div class="modal fade" id="alert-modal" tabindex="-1" aria-labelledby="alert-modal-title" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="alert-modal-title">提示</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                </div>
+                <div class="modal-body" id="alert-modal-body">
+                    <!-- 提示内容 -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">确定</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 确认对话框 -->
+    <div class="modal fade" id="confirm-modal" tabindex="-1" aria-labelledby="confirm-modal-title" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="confirm-modal-title">确认操作</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                </div>
+                <div class="modal-body" id="confirm-modal-body">
+                    <!-- 确认内容 -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="confirm-cancel-btn">取消</button>
+                    <button type="button" class="btn btn-primary" id="confirm-ok-btn">确定</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 网站设置模态框 -->
+    <div class="modal fade" id="websites-modal" tabindex="-1" aria-labelledby="websites-modal-label" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="websites-modal-label">网站设置</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row mb-3">
+                        <div class="col">
+                            <h6>添加新网站类型</h6>
+                            <form id="website-form" class="row g-3">
+                                <div class="col-md-4">
+                                    <input type="text" class="form-control" id="new-website-name" placeholder="网站类型名称" required>
+                                </div>
+                                <div class="col-md-5">
+                                    <input type="url" class="form-control" id="new-website-url" placeholder="网站链接 (可选)">
+                                </div>
+                                <div class="col-md-3">
+                                    <button type="button" class="btn btn-primary w-100" id="add-website-btn">添加</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>网站类型</th>
+                                    <th>链接</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="websites-list-table">
+                                <tr>
+                                    <td colspan="3" class="text-center">加载中...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑网站模态框 -->
+    <div class="modal fade" id="edit-website-modal" tabindex="-1" aria-labelledby="edit-website-modal-label" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="edit-website-modal-label">编辑网站</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="edit-website-form">
+                        <input type="hidden" id="edit-website-id">
+                        <div class="mb-3">
+                            <label for="edit-website-name" class="form-label">网站类型名称</label>
+                            <input type="text" class="form-control" id="edit-website-name" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit-website-url" class="form-label">网站链接</label>
+                            <input type="url" class="form-control" id="edit-website-url" placeholder="https://example.com">
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit-website-description" class="form-label">描述</label>
+                            <textarea class="form-control" id="edit-website-description" rows="3"></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" id="save-website-btn">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html> 
